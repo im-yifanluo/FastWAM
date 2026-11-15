@@ -1,0 +1,17 @@
+--- a/src/fastwam/trainer.py	2026-11-14 04:35:43.564243692 -0600
++++ b/src/fastwam/trainer.py	2026-11-14 04:35:43.579627720 -0600
+@@ -298,6 +298,14 @@
+             raise FileNotFoundError(f"Resume checkpoint not found: {resume}")
+         logger.info("Loading weight checkpoint only: %s", resume)
+         self.accelerator.unwrap_model(self.model).load_checkpoint(str(resume_path), optimizer=None)
++        # DeepSpeed ZeRO keeps fp32 master weights that were cloned inside accelerator.prepare(), and
++        # copies them back into the model on every optimizer step. Refresh them from the weights just
++        # loaded; otherwise the first step silently reverts the model to its pre-load initialisation.
++        engine_wrapper = getattr(self.accelerator, "deepspeed_engine_wrapped", None)
++        ds_optimizer = getattr(getattr(engine_wrapper, "engine", None), "optimizer", None)
++        if ds_optimizer is not None and hasattr(ds_optimizer, "refresh_fp32_params"):
++            ds_optimizer.refresh_fp32_params()
++            logger.info("Refreshed DeepSpeed fp32 master weights from the loaded checkpoint.")
+         logger.warning("Loaded .pt weights only; optimizer/scheduler/step were not restored under ZeRO2.")
+ 
+     def _set_dit_only_train_mode(self):
