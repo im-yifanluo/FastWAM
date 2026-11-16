@@ -6,6 +6,11 @@
 # Submit from the repo root:
 #   sbatch --account=<project>-delta-gpu scripts/delta_libero_150steps.sbatch
 #
+# Shorter wait: 4 GPUs on the interactive H200 partition (1 hour cap, double rate, so the same cost
+# per hour as 8 GPUs here). Training uses however many GPUs the job was given:
+#   sbatch --account=<project>-delta-gpu --partition=gpuH200x8-interactive \
+#          --gpus-per-node=4 --cpus-per-task=48 --mem=400G scripts/delta_libero_150steps.sbatch
+#
 # Must be in place first (official default locations, relative to the repo root):
 #   ../fastwam-env/        conda env from the README, plus conda-forge "ffmpeg>=7,<8"
 #                          (or set FASTWAM_ENV=<env dir> when submitting)
@@ -35,7 +40,9 @@ export PATH="$ENV_DIR/bin:$PATH"
 export DIFFSYNTH_SKIP_DOWNLOAD=true  # stop if a weight file is missing instead of downloading on GPU time
 
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-ls -d checkpoints/Wan-AI/Wan2.2-TI2V-5B/diffusion_pytorch_model*.safetensors \
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)  # the GPUs this job was given
+echo "[gpus] training on $NUM_GPUS GPUs"
+ls -dcheckpoints/Wan-AI/Wan2.2-TI2V-5B/diffusion_pytorch_model*.safetensors \
       checkpoints/DiffSynth-Studio/Wan-Series-Converted-Safetensors/Wan2.2_VAE.safetensors \
       checkpoints/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors \
       checkpoints/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl \
@@ -60,4 +67,4 @@ ACTION_INIT=checkpoints/ActionDiT_linear_interp_Wan22_alphascale_1024hdim.pt
 [ -d data/text_embeds_cache/libero ] || python scripts/precompute_text_embeds.py task=libero_uncond_2cam224_1e-4
 
 # README "Training", step 2: the official LIBERO command, limited to 150 steps.
-bash scripts/train_zero1.sh 8 task=libero_uncond_2cam224_1e-4 max_steps=150
+bash scripts/train_zero1.sh "$NUM_GPUS" task=libero_uncond_2cam224_1e-4 max_steps=150
