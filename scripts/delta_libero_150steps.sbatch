@@ -30,7 +30,8 @@
 
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
-export PATH="${FASTWAM_ENV:-$PWD/../fastwam-env}/bin:$PATH"
+ENV_DIR="${FASTWAM_ENV:-$PWD/../fastwam-env}"
+export PATH="$ENV_DIR/bin:$PATH"
 export DIFFSYNTH_SKIP_DOWNLOAD=true  # stop if a weight file is missing instead of downloading on GPU time
 
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -39,6 +40,16 @@ ls -d checkpoints/Wan-AI/Wan2.2-TI2V-5B/diffusion_pytorch_model*.safetensors \
       checkpoints/DiffSynth-Studio/Wan-Series-Converted-Safetensors/models_t5_umt5-xxl-enc-bf16.safetensors \
       checkpoints/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl \
       data/libero_mujoco3.3.2/libero_*_no_noops_lerobot
+
+# Read the environment, weights and dataset once so the commands below get them from memory.
+# Measured on Delta's /work/hdd on 2026-11-15: loading the 11 GB text encoder cold took 12 minutes;
+# after reading the files once like this, a script that loads 33 GB of weights took under 2 minutes.
+# The text encoder is left out: only the two preparation commands use it, and they are normally
+# already done (if they are not, they still work, only slowly).
+echo "[read-once] start $(date +%T)"
+find "$ENV_DIR" checkpoints data/libero_mujoco3.3.2 data/text_embeds_cache -type f \
+  ! -name '*.tar.gz' ! -name 'models_t5_*' -print0 | xargs -0 -P 48 -n 16 cat > /dev/null || true
+echo "[read-once] end $(date +%T)"
 
 # README "Model Preparation", step 2: build the starting action weights from Wan2.2 (skipped if present).
 ACTION_INIT=checkpoints/ActionDiT_linear_interp_Wan22_alphascale_1024hdim.pt
